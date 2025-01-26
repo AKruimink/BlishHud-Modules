@@ -5,93 +5,103 @@ on:
     branches:
       - dev
     paths:
-      - 'bhm-*/**/*'
+      - 'src/*'
 
 env:
-  GITHUB_TOKEN: ${{ github.token }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 concurrency:
-  group: version-bump-${{ github.sha }}
+  group: version-bump
   cancel-in-progress: true
 
 jobs:
-  detect-changes:
-    name: Detect Changed Projects
+  build-prerelease:
+    name: Bump Version / Create Pull Request
     runs-on: windows-latest
-    outputs:
-      affected_modules: ${{ steps.detect_changes.outputs.modules }}
+    if: ${{ github.ref == 'refs/heads/dev' && !github.event.pull_request && !startsWith(github.ref, 'refs/tags/') }}
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4.1.7
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v1.1.1
+        with:
+          versionSpec: '5.x'
+          
+      - name: Checkout 'dev'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Detect Changed Projects
         id: detect_changes
-        shell: pwsh
         run: |
-          $changedFiles = git diff --name-only origin/dev HEAD
-          $modules = $changedFiles | Select-String -Pattern '^bhm-' | ForEach-Object { $_.Line.Split('/')[0] } | Sort-Object -Unique
-          $sharedChanged = $changedFiles | Select-String -Quiet -Pattern '^bhm-shared/'
-          if ($sharedChanged) {
-            $referencingModules = @()
-            $allModules = Get-ChildItem -Directory | Where-Object { $_.Name -like 'bhm-*' -and $_.Name -ne 'bhm-shared' }
-            foreach ($module in $allModules) {
-              $csprojPath = Join-Path $module.FullName "$($module.Name).csproj"
-              if (Test-Path $csprojPath) {
-                $referencesShared = Select-String -Path $csprojPath -Pattern "Include=\"\.\.\\\bhm-shared\\\bhm-shared.csproj\""
-                if ($referencesShared) { $referencingModules += $module.Name }
-              }
-            }
-            $modules += $referencingModules
-          }
-          $modules = $modules | Sort-Object -Unique
-          Write-Output "::set-output name=modules::$(ConvertTo-Json $modules)"
+          # Detect all changed projects in the push
+          CHANGED_PROJECTS=$(git diff --name-only origin/main..HEAD | grep '^src/' | cut -d'/' -f2 | sort -u | uniq)
+          echo "CHANGED_PROJECTS=${CHANGED_PROJECTS}" >> $GITHUB_ENV
+          echo "::set-output name=changed_projects::${CHANGED_PROJECTS}"
 
-  process-affected-modules:
-    name: Process Affected Modules
-    needs: detect-changes
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        module: ${{ fromJson(needs.detect-changes.outputs.affected_modules) }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4.1.7
-
-      - name: Install MSBuild Tools
-        uses: microsoft/setup-msbuild@v2
-
-      - name: Install NuGet
-        uses: nuget/setup-nuget@v2
-
-      - name: Bump Version in .csproj
-        shell: pwsh
+      - name: Detect Dependent BHM Modules
+        id: detect_dependents
         run: |
-          $csprojPath = "${{ matrix.module }}/${{ matrix.module }}.csproj"
-          $version = "${{ steps.gitversion.outputs.majorMinorPatch }}"
-          $xml = [xml](Get-Content $csprojPath)
-          $xml.Project.PropertyGroup.Version = $version
-          $xml.Save($csprojPath)
+          touch impacted_projects.txt
 
-      - name: Bump Version in manifest.json
-        uses: jossef/action-set-json-field@v2.2
-        with:
-          file: ${{ matrix.module }}/manifest.json
-          field: version
-          value: ${{ steps.gitversion.outputs.majorMinorPatch }}
+          for project in $CHANGED_PROJECTS; do
+            if [[ "$project" =~ ^bhms|bhs ]]; then
+              # Find all BHM modules referencing this shared project
+              grep -l -r "<ProjectReference.*${project}.csproj" src/*/*.csproj | cut -d'/' -f2 >> impacted_projects.txt
+            else
+              echo $project >> impacted_projects.txt
+            fi
+          done
 
-      - name: Commit and Push Changes
-        shell: pwsh
+          IMPACTED_PROJECTS=$(cat impacted_projects.txt | sort -u)
+          echo "IMPACTED_PROJECTS=${IMPACTED_PROJECTS}" >> $GITHUB_ENV
+          echo "::set-output name=impacted_projects::${IMPACTED_PROJECTS}"
+
+      - name: (Re-)create branch 'actions/version-bump'
+        run: |
+          git branch -D actions/version-bump || true
+          git push origin --delete actions/version-bump || true
+          git checkout -b actions/version-bump
+          git push --set-upstream origin actions/version-bump
+
+      - name: Bump Versions for Impacted Modules
+        id: version_bump
+        run: |
+          for project in $IMPACTED_PROJECTS; do
+            cd src/$project
+            
+            # Bump version in .csproj
+            CURRENT_VERSION=$(grep -oP '(?<=<Version>)[^<]+' $project.csproj)
+            NEW_VERSION=$(echo $CURRENT_VERSION | awk -F. -v OFS=. '{$NF+=1; print}')
+            sed -i -E "s#<Version>$CURRENT_VERSION#<Version>$NEW_VERSION#" $project.csproj
+            
+            # Update manifest.json if it's a BHM module
+            if [[ "$project" =~ ^bhm ]]; then
+              jq ".version = \"$NEW_VERSION\"" manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+            fi
+            
+            cd -
+          done
+
+      - name: Commit version changes
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add ${{ matrix.module }}/manifest.json ${{ matrix.module }}.csproj
-          git commit -m "(skip): bump version for ${{ matrix.module }}"
-          git push origin HEAD
+          git add .
+          git commit -m "ci: Version bump for impacted modules"
 
-      - name: Create PR for Module
-        uses: peter-evans/create-pull-request@v6.1.0
+      - name: Push version changes
+        uses: ad-m/github-push-action@v0.8.0
         with:
-          branch: actions/version-bump-${{ matrix.module }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: actions/version-bump
+
+      - name: Update or Create PR 'dev ← actions/version-bump'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: actions/version-bump
           base: dev
-          title: "Version Bump for ${{ matrix.module }}"
-          body: "Automated version bump for ${{ matrix.module }}"
+          title: "🤖 Version Bump"
+          body: |
+            The following modules were updated:
+            ${{ steps.detect_dependents.outputs.impacted_projects }}
+          labels: Version Bump
