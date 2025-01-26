@@ -1,0 +1,24 @@
+{
+  "name": "Mouse Binds",
+  "version": "0.0.1",
+  "namespace": "AK.BHM.MouseBinds",
+  "package": "BHM-MouseBinds.dll",
+  "manifest_version": 1,
+  "description": "",
+  "dependencies": {
+    "bh.blishhud": "^1.0.0"
+  },
+  "url": "",
+  "contributors": [
+    {
+      "name": "Zysal",
+      "username": "Zysal.5701"
+    }
+  ],
+  "directories": [
+    "bhm_mouse_binds"
+  ],
+  "actions": [],
+  "enabled_without_gw2": false,
+  "api_permissions": {}
+}

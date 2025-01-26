@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net48</TargetFramework>
+		<LangVersion>10</LangVersion>
+		<RootNamespace>BHM_MapMarkers</RootNamespace>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Version>0.0.1</Version>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- Ensure all assets are excluded from the build as per: https://blishhud.com/docs/modules/overview/getting-started-->
+		<PackageReference Include="BlishHUD" Version="1.2.0">
+			<ExcludeAssets>runtime;contentFiles;analyzers</ExcludeAssets>
+		</PackageReference>
+		<PackageReference Include="SemanticVersioning" Version="1.2.2">
+			<ExcludeAssets>runtime;contentFiles;analyzers</ExcludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="System.ComponentModel.Composition" />
+	</ItemGroup>
+
+</Project>

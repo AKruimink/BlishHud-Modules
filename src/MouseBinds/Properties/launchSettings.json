@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "Guildwars": {
+      "commandName": "Executable",
+      "executablePath": "",
+      "commandLineArgs": ""
+    },
+    "Powershell": {
+      "commandName": "Executable",
+      "executablePath": "",
+      "commandLineArgs": ""
+    }
+  }
+}

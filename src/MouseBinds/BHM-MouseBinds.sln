@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35527.113
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BHM-MouseBinds", "BHM-MouseBinds.csproj", "{8B0E4914-6388-4B99-905C-4E3CA76AD235}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BHM-Shared", "..\Shared\BHM-Shared.csproj", "{AB1BCDD0-F149-4A9C-A3EE-062326AFEDEF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8B0E4914-6388-4B99-905C-4E3CA76AD235}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8B0E4914-6388-4B99-905C-4E3CA76AD235}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8B0E4914-6388-4B99-905C-4E3CA76AD235}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8B0E4914-6388-4B99-905C-4E3CA76AD235}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB1BCDD0-F149-4A9C-A3EE-062326AFEDEF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB1BCDD0-F149-4A9C-A3EE-062326AFEDEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB1BCDD0-F149-4A9C-A3EE-062326AFEDEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB1BCDD0-F149-4A9C-A3EE-062326AFEDEF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
