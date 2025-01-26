@@ -8,5 +8,6 @@ public class MouseBindsModule : Module
 {
     public MouseBindsModule([Import("ModuleParameters")] ModuleParameters moduleParameters) : base(moduleParameters)
     {
+        var temp = 0;
     }
 }
