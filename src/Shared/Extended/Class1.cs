@@ -4,6 +4,7 @@
     {
         public Class1()
         {
+            var temp = 0;
         }
     }
 }
