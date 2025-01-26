@@ -1,0 +1,78 @@
+name: Staging
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+       - 'bhm-*/**/*'
+
+jobs:
+  detect-module:
+    name: Detect Affected Module
+    runs-on: windows-latest
+    outputs:
+      module: ${{ steps.detect_changes.outputs.module }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.1.7
+
+      - name: Detect Affected Module
+        id: detect_changes
+        shell: pwsh
+        run: |
+          # Get changed files
+          $changedFiles = git diff --name-only origin/main HEAD
+
+          # Detect directly changed modules
+          $modules = $changedFiles | Select-String -Pattern '^bhm-' | ForEach-Object { $_.Line.Split('/')[0] } | Sort-Object -Unique
+
+          # Check if bhm-shared was changed
+          $sharedChanged = $changedFiles | Select-String -Quiet -Pattern '^bhm-shared/'
+
+          # If bhm-shared changed, check dependent modules dynamically
+          if ($sharedChanged) {
+            $referencingModules = @()
+            $allModules = Get-ChildItem -Directory | Where-Object { $_.Name -like 'bhm-*' -and $_.Name -ne 'bhm-shared' }
+            foreach ($module in $allModules) {
+              $csprojPath = Join-Path $module.FullName "$($module.Name).csproj"
+              if (Test-Path $csprojPath) {
+                $referencesShared = Select-String -Path $csprojPath -Pattern "Include=\"\.\.\\\bhm-shared\\\bhm-shared.csproj\""
+                if ($referencesShared) {
+                  $referencingModules += $module.Name
+                }
+              }
+            }
+            $modules += $referencingModules
+          }
+
+          # Remove duplicates and output modules
+          $modules = $modules | Sort-Object -Unique
+          Write-Output "::set-output name=modules::$(ConvertTo-Json $modules)"
+
+  build:
+    name: Build Module
+    needs: detect-module
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.1.7
+
+      - name: Install MSBuild Tools
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet Packages
+        shell: pwsh
+        run: nuget restore ${{ needs.detect-module.outputs.module }}.sln
+
+      - name: Build Module
+        shell: pwsh
+        run: msbuild ${{ needs.detect-module.outputs.module }}.sln -p:Configuration=Debug
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: "${{ needs.detect-module.outputs.module }}_PR.${{ github.event.number }}"
+          path: ${{ needs.detect-module.outputs.module }}/bin/Debug

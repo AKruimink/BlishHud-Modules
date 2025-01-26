@@ -1,0 +1,97 @@
+name: Integration
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - 'bhm-*/**/*'
+
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
+concurrency:
+  group: version-bump-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    name: Detect Changed Projects
+    runs-on: windows-latest
+    outputs:
+      affected_modules: ${{ steps.detect_changes.outputs.modules }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.1.7
+
+      - name: Detect Changed Projects
+        id: detect_changes
+        shell: pwsh
+        run: |
+          $changedFiles = git diff --name-only origin/dev HEAD
+          $modules = $changedFiles | Select-String -Pattern '^bhm-' | ForEach-Object { $_.Line.Split('/')[0] } | Sort-Object -Unique
+          $sharedChanged = $changedFiles | Select-String -Quiet -Pattern '^bhm-shared/'
+          if ($sharedChanged) {
+            $referencingModules = @()
+            $allModules = Get-ChildItem -Directory | Where-Object { $_.Name -like 'bhm-*' -and $_.Name -ne 'bhm-shared' }
+            foreach ($module in $allModules) {
+              $csprojPath = Join-Path $module.FullName "$($module.Name).csproj"
+              if (Test-Path $csprojPath) {
+                $referencesShared = Select-String -Path $csprojPath -Pattern "Include=\"\.\.\\\bhm-shared\\\bhm-shared.csproj\""
+                if ($referencesShared) { $referencingModules += $module.Name }
+              }
+            }
+            $modules += $referencingModules
+          }
+          $modules = $modules | Sort-Object -Unique
+          Write-Output "::set-output name=modules::$(ConvertTo-Json $modules)"
+
+  process-affected-modules:
+    name: Process Affected Modules
+    needs: detect-changes
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.detect-changes.outputs.affected_modules) }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.1.7
+
+      - name: Install MSBuild Tools
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Bump Version in .csproj
+        shell: pwsh
+        run: |
+          $csprojPath = "${{ matrix.module }}/${{ matrix.module }}.csproj"
+          $version = "${{ steps.gitversion.outputs.majorMinorPatch }}"
+          $xml = [xml](Get-Content $csprojPath)
+          $xml.Project.PropertyGroup.Version = $version
+          $xml.Save($csprojPath)
+
+      - name: Bump Version in manifest.json
+        uses: jossef/action-set-json-field@v2.2
+        with:
+          file: ${{ matrix.module }}/manifest.json
+          field: version
+          value: ${{ steps.gitversion.outputs.majorMinorPatch }}
+
+      - name: Commit and Push Changes
+        shell: pwsh
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add ${{ matrix.module }}/manifest.json ${{ matrix.module }}.csproj
+          git commit -m "(skip): bump version for ${{ matrix.module }}"
+          git push origin HEAD
+
+      - name: Create PR for Module
+        uses: peter-evans/create-pull-request@v6.1.0
+        with:
+          branch: actions/version-bump-${{ matrix.module }}
+          base: dev
+          title: "Version Bump for ${{ matrix.module }}"
+          body: "Automated version bump for ${{ matrix.module }}"
