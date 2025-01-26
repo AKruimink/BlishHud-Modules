@@ -1,0 +1,91 @@
+name: Deployment
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'bhm-*/**/*'
+    types: [closed]
+
+jobs:
+  detect-modules:
+    name: Detect Affected Modules
+    runs-on: windows-latest
+    outputs:
+      modules: ${{ steps.detect_changes.outputs.modules }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.1.7
+
+      - name: Detect Changed Modules
+        id: detect_changes
+        shell: pwsh
+        run: |
+          # Get changed files
+          $changedFiles = git diff --name-only origin/main HEAD
+
+          # Detect directly changed modules
+          $modules = $changedFiles | Select-String -Pattern '^bhm-' | ForEach-Object { $_.Line.Split('/')[0] } | Sort-Object -Unique
+
+          # Check if bhm-shared was changed
+          $sharedChanged = $changedFiles | Select-String -Quiet -Pattern '^bhm-shared/'
+
+          # If bhm-shared changed, check dependent modules dynamically
+          if ($sharedChanged) {
+            $referencingModules = @()
+            $allModules = Get-ChildItem -Directory | Where-Object { $_.Name -like 'bhm-*' -and $_.Name -ne 'bhm-shared' }
+            foreach ($module in $allModules) {
+              $csprojPath = Join-Path $module.FullName "$($module.Name).csproj"
+              if (Test-Path $csprojPath) {
+                $referencesShared = Select-String -Path $csprojPath -Pattern "Include=\"\.\.\\\bhm-shared\\\bhm-shared.csproj\""
+                if ($referencesShared) {
+                  $referencingModules += $module.Name
+                }
+              }
+            }
+            $modules += $referencingModules
+          }
+
+          # Remove duplicates and output modules
+          $modules = $modules | Sort-Object -Unique
+          Write-Output "::set-output name=modules::$(ConvertTo-Json $modules)"
+
+  release-modules:
+    name: Release Modules
+    needs: detect-modules
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        module: ${{ fromJson(needs.detect-modules.outputs.modules) }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4.1.7
+
+      - name: Install MSBuild Tools
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet Packages
+        shell: pwsh
+        run: nuget restore ${{ matrix.module }}.sln
+
+      - name: Build Module
+        shell: pwsh
+        run: msbuild ${{ matrix.module }}.sln -p:Configuration=Release
+
+      - name: Create Release Draft
+        uses: release-drafter/release-drafter@v6.0.0
+        with:
+          version: ${{ github.event.pull_request.merged }}
+          tag: "v${{ github.event.pull_request.merged }}"
+          name: "Release for ${{ matrix.module }}"
+
+      - name: Upload Artifact
+        uses: shogo82148/actions-upload-release-asset@v1.7.5
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ matrix.module }}/bin/Release
+          asset_name: "${{ matrix.module }}.bhm"
