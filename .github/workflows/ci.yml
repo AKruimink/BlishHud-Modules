@@ -5,9 +5,7 @@ on:
     branches:
       - dev
     paths:
-      - 'bhm-mousebinds/**/*'
-      - 'bhm-mapmarkers/**/*'
-      - 'bhm-shared/**/*'
+      - 'bhm-*/**/*'
 
 env:
   GITHUB_TOKEN: ${{ github.token }}
