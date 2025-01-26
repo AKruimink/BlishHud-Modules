@@ -5,7 +5,7 @@ on:
     branches:
       - dev
     paths:
-      - 'src/*'
+      - 'src/**/*'
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
